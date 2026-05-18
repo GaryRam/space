@@ -3,6 +3,7 @@ const ctx = canvas.getContext("2d");
 const scoreEl = document.getElementById("score");
 const livesEl = document.getElementById("lives");
 const levelEl = document.getElementById("level");
+const bossHealthEl = document.getElementById("bossHealth");
 const messageEl = document.getElementById("message");
 
 const gameWidth = canvas.width;
@@ -16,6 +17,7 @@ let state = "ready";
 let invaderDirection = 1;
 let invaderSpeed = 0.4;
 let invaders = [];
+let boss = null;
 let bullets = [];
 let enemyBullets = [];
 let bunkers = [];
@@ -32,7 +34,6 @@ const player = {
   x: gameWidth / 2 - 20,
   y: gameHeight - 60,
   speed: 6,
-  cooldown: 0,
 };
 
 function loadHighScores() {
@@ -74,6 +75,7 @@ function formatHighScores() {
 function triggerGameOver() {
   state = "gameover";
   addHighScore(score, level);
+  updateHUD();
   const hsText = formatHighScores();
   showMessage(`Game Over! Score: ${score} Level: ${level}\n\n${hsText}\nPress ENTER to restart`);
 }
@@ -93,6 +95,19 @@ function resetGame() {
   updateHUD();
   showMessage("Press ENTER to start");
   state = "ready";
+}
+
+function createBoss() {
+  boss = {
+    x: gameWidth / 2 - 60,
+    y: 70,
+    width: 120,
+    height: 44,
+    alive: true,
+    health: 12 + level * 6,
+    maxHealth: 12 + level * 6,
+    direction: 1,
+  };
 }
 
 function createBunkers() {
@@ -122,9 +137,14 @@ function createBunkers() {
 }
 
 function createInvaders() {
+  boss = null;
   invaders = [];
   invaderDirection = 1;
   invaderSpeed = 0.2 + level * 0.05;
+  if (level % 3 === 0) {
+    createBoss();
+    return;
+  }
   const rows = Math.min(5, 3 + Math.floor(level / 2));
   const cols = 10;
   const offsetX = 60;
@@ -166,6 +186,13 @@ function updateHUD() {
   scoreEl.textContent = `Score: ${score}`;
   livesEl.textContent = `Lives: ${lives}`;
   levelEl.textContent = `Level: ${level}`;
+  if (boss && boss.alive) {
+    bossHealthEl.textContent = `Boss: ${boss.health}`;
+    bossHealthEl.classList.remove("hidden");
+  } else {
+    bossHealthEl.textContent = "";
+    bossHealthEl.classList.add("hidden");
+  }
 }
 
 function showMessage(text) {
@@ -178,18 +205,12 @@ function hideMessage() {
 }
 
 function fireBullet() {
-  if (player.cooldown > 0 || bullets.length >= 3) {
-    return;
-  }
-
   bullets.push({
     x: player.x + player.width / 2 - 3,
     y: player.y - 10,
     width: 6,
     height: 14,
   });
-
-  player.cooldown = 14;
 }
 
 function handleInput() {
@@ -206,44 +227,60 @@ function handleInput() {
   }
 
   player.x = Math.max(10, Math.min(gameWidth - player.width - 10, player.x));
-
-  if (player.cooldown > 0) {
-    player.cooldown -= 1;
-  }
 }
 
 function updateBullets() {
   bullets.forEach((bullet) => {
-    bullet.y -= 10;
+    bullet.y -= 14;
   });
 
   bullets = bullets.filter((bullet) => bullet.y + bullet.height > 0);
 }
 
-function fireEnemyBullet() {
-  const aliveInvaders = invaders.filter((invader) => invader.alive);
-  if (aliveInvaders.length === 0) {
-    return;
-  }
-
-  const shooter = aliveInvaders[Math.floor(Math.random() * aliveInvaders.length)];
-  enemyBullets.push({
-    x: shooter.x + shooter.width / 2 - 3,
-    y: shooter.y + shooter.height + 6,
-    width: 6,
-    height: 14,
+function getBottomInvaders() {
+  const bottomByColumn = {};
+  invaders.forEach((invader) => {
+    if (!invader.alive) return;
+    const column = Math.round(invader.x / 60);
+    if (!bottomByColumn[column] || invader.y > bottomByColumn[column].y) {
+      bottomByColumn[column] = invader;
+    }
   });
+  const shooters = Object.values(bottomByColumn);
+  if (boss && boss.alive) {
+    shooters.push(boss);
+  }
+  return shooters;
+}
+
+function fireEnemyBullets() {
+  const bottomInvaders = getBottomInvaders();
+  if (bottomInvaders.length === 0) return;
+
+  const shots = Math.min(2, Math.max(1, Math.floor(level / 3)));
+  const availableInvaders = [...bottomInvaders];
+
+  for (let i = 0; i < shots && availableInvaders.length > 0; i += 1) {
+    const index = Math.floor(Math.random() * availableInvaders.length);
+    const invader = availableInvaders.splice(index, 1)[0];
+    enemyBullets.push({
+      x: invader.x + invader.width / 2 - 3,
+      y: invader.y + invader.height + 6,
+      width: 6,
+      height: 14,
+    });
+  }
 }
 
 function updateEnemyBullets() {
   enemyFireTimer -= 1;
   if (enemyFireTimer <= 0) {
-    fireEnemyBullet();
-    enemyFireTimer = Math.max(50, 140 - level * 8);
+    fireEnemyBullets();
+    enemyFireTimer = Math.max(20, 45 - level * 3 + Math.random() * 20);
   }
 
   enemyBullets.forEach((bullet) => {
-    bullet.y += 4 + level * 0.12;
+    bullet.y += 7 + level * 0.18;
   });
 
   enemyBullets = enemyBullets.filter((bullet) => bullet.y < gameHeight);
@@ -251,6 +288,19 @@ function updateEnemyBullets() {
 
 function updateInvaders(delta) {
   const moveDistance = invaderSpeed * delta;
+  if (boss && boss.alive) {
+    boss.x += boss.direction * moveDistance * 0.7;
+    if (boss.x <= 10) {
+      boss.x = 10;
+      boss.direction = 1;
+    }
+    if (boss.x + boss.width >= gameWidth - 10) {
+      boss.x = gameWidth - boss.width - 10;
+      boss.direction = -1;
+    }
+    return;
+  }
+
   let shouldDrop = false;
   let leftEdge = Infinity;
   let rightEdge = -Infinity;
@@ -285,6 +335,23 @@ function updateInvaders(delta) {
 
 function detectCollisions() {
   bullets.forEach((bullet) => {
+    if (boss && boss.alive &&
+      bullet.x < boss.x + boss.width &&
+      bullet.x + bullet.width > boss.x &&
+      bullet.y < boss.y + boss.height &&
+      bullet.y + bullet.height > boss.y
+    ) {
+      boss.health -= 1;
+      bullet.y = -100;
+      createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "#ff5555", 18);
+      if (boss.health <= 0) {
+        boss.alive = false;
+        score += 200 + level * 10;
+        createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "#ff3333", 28);
+      }
+      return;
+    }
+
     invaders.forEach((invader) => {
       if (!invader.alive) return;
       if (
@@ -351,6 +418,7 @@ function detectCollisions() {
   bunkers = bunkers.filter((block) => block.health > 0);
 
   const aliveInvaders = invaders.filter((invader) => invader.alive);
+  const bossAlive = boss && boss.alive;
 
   aliveInvaders.forEach((invader) => {
     if (invader.y + invader.height >= player.y) {
@@ -359,7 +427,12 @@ function detectCollisions() {
     }
   });
 
-  if (aliveInvaders.length === 0) {
+  if (bossAlive && boss.y + boss.height >= player.y) {
+    lives = 0;
+    triggerGameOver();
+  }
+
+  if (!bossAlive && aliveInvaders.length === 0) {
     level += 1;
     updateHUD();
     state = "levelup";
@@ -440,6 +513,16 @@ function drawInvaders() {
   });
 }
 
+function drawBoss() {
+  if (!boss || !boss.alive) return;
+  ctx.fillStyle = "#ff4f4f";
+  ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+  ctx.fillStyle = "#ffeb80";
+  ctx.fillRect(boss.x + 12, boss.y + 12, boss.width - 24, 8);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(boss.x + 12, boss.y + boss.height - 14, (boss.width - 24) * (boss.health / boss.maxHealth), 8);
+}
+
 function drawParticles() {
   particles.forEach((p) => {
     const alpha = p.life / p.maxLife;
@@ -482,6 +565,7 @@ function render() {
   drawBullets();
   drawEnemyBullets();
   drawInvaders();
+  drawBoss();
   drawParticles();
   
   ctx.restore();
