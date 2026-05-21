@@ -3,21 +3,55 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Space Invaders</title>
+    <title>侍 SAMURAI INVADERS 侍</title>
     <link rel="stylesheet" href="css/style.css">
   </head>
   <body>
-    <div class="game-shell">
-      <header class="title">Space Invaders</header>
-      <div class="game-area">
-        <canvas id="gameCanvas" width="800" height="760"></canvas>
-        <div class="hud">
-          <div id="score">Score: 0</div>
-          <div id="lives">Lives: 3</div>
-          <div id="level">Level: 1</div>
-          <div id="bossHealth" class="hidden"></div>
+    <div class="game-container">
+      <div class="stars"></div>
+      <div class="game-shell">
+        <header class="title">
+          <span class="title-glow">🥷</span>
+          SAMURAI INVADERS
+          <span class="title-glow">🥷</span>
+        </header>
+        
+        <!-- Name Input Screen -->
+        <div id="nameScreen" class="overlay-screen active">
+          <div class="name-input-box">
+            <h2>侍 ENTER WARRIOR NAME 侍</h2>
+            <input type="text" id="playerName" placeholder="Your Dojo Name" maxlength="15" />
+            <button id="startBtn">⚔ BEGIN BATTLE ⚔</button>
+            <p class="hint">Press ENTER to start</p>
+          </div>
         </div>
-        <div id="message" class="overlay">Press ENTER to start</div>
+
+        <div class="game-area">
+          <canvas id="gameCanvas" width="800" height="760"></canvas>
+          
+          <div class="hud">
+            <div class="hud-left">
+              <div id="playerNameDisplay" class="player-name">戦士: ---</div>
+              <div id="score" class="score-display">HONOR: 0</div>
+            </div>
+            <div class="hud-center">
+              <div id="level" class="level-display">STAGE: 1</div>
+            </div>
+            <div class="hud-right">
+              <div id="rank" class="rank-display">RANK: --</div>
+              <div id="lives" class="lives-display">LIVES: 3</div>
+              <div id="bossHealth" class="hidden boss-health"></div>
+            </div>
+          </div>
+
+          <!-- Leaderboard Panel -->
+          <div class="leaderboard-panel">
+            <div class="leaderboard-title">⭐ HONOR ROLL ⭐</div>
+            <div id="leaderboard" class="leaderboard-list"></div>
+          </div>
+
+          <div id="message" class="overlay">Press ENTER to begin battle</div>
+        </div>
       </div>
     </div>
     <script src="js/game.js"></script>

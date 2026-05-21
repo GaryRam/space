@@ -5,6 +5,13 @@ const livesEl = document.getElementById("lives");
 const levelEl = document.getElementById("level");
 const bossHealthEl = document.getElementById("bossHealth");
 const messageEl = document.getElementById("message");
+const hudEl = document.querySelector(".hud");
+const playerNameDisplay = document.getElementById("playerNameDisplay");
+const rankEl = document.getElementById("rank");
+const leaderboardEl = document.getElementById("leaderboard");
+const nameScreenEl = document.getElementById("nameScreen");
+const playerNameInput = document.getElementById("playerName");
+const startBtn = document.getElementById("startBtn");
 
 const gameWidth = canvas.width;
 const gameHeight = canvas.height;
@@ -13,7 +20,7 @@ const keys = {};
 let score = 0;
 let lives = 3;
 let level = 1;
-let state = "ready";
+let state = "name";
 let invaderDirection = 1;
 let invaderSpeed = 0.4;
 let invaders = [];
@@ -27,6 +34,8 @@ let screenShake = 0;
 let animationFrame = 0;
 let lastTime = 0;
 let highScores = [];
+let playerName = "";
+let currentRank = "--";
 
 const player = {
   width: 40,
@@ -36,51 +45,90 @@ const player = {
   speed: 6,
 };
 
+function blankHighScores() {
+  return Array.from({ length: 10 }, () => ({ name: "---", score: 0, level: 0 }));
+}
+
 function loadHighScores() {
-  const saved = localStorage.getItem("spaceInvadersHighScores");
-  if (saved) {
-    highScores = JSON.parse(saved);
-  } else {
-    highScores = [
-      { score: 1000, level: 1 },
-      { score: 800, level: 1 },
-      { score: 600, level: 1 },
-      { score: 400, level: 1 },
-      { score: 200, level: 1 },
-    ];
+  const stored = localStorage.getItem("spaceInvadersHighScores");
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        highScores = parsed;
+        return;
+      }
+    } catch (error) {
+      // ignore invalid stored data and reset to defaults
+    }
   }
+  highScores = blankHighScores();
 }
 
 function saveHighScores() {
   localStorage.setItem("spaceInvadersHighScores", JSON.stringify(highScores));
 }
 
-function addHighScore(finalScore, finalLevel) {
-  const entry = { score: finalScore, level: finalLevel };
+function addHighScore(finalScore, finalLevel, name) {
+  const entry = { name: name.toUpperCase() || "ANON", score: finalScore, level: finalLevel };
   highScores.push(entry);
   highScores.sort((a, b) => b.score - a.score);
-  highScores = highScores.slice(0, 5);
+  highScores = highScores.slice(0, 10);
   saveHighScores();
-  return highScores.some((hs) => hs.score === finalScore && hs.level === finalLevel);
+  
+  // Find current player's rank
+  const rankIndex = highScores.findIndex(hs => hs.name === entry.name && hs.score === finalScore && hs.level === finalLevel);
+  currentRank = rankIndex >= 0 ? `#${rankIndex + 1}` : "--";
+  
+  return rankIndex >= 0;
+}
+
+function updateLeaderboard() {
+  leaderboardEl.innerHTML = "";
+  highScores.slice(0, 5).forEach((entry, i) => {
+    const div = document.createElement("div");
+    div.className = "leaderboard-entry";
+    if (entry.name === playerName.toUpperCase()) {
+      div.classList.add("current");
+    } else if (i === 0) {
+      div.classList.add("gold");
+    }
+    const displayName = entry.name.substring(0, 10);
+    div.textContent = `${i + 1}. ${displayName} ${entry.score}`;
+    leaderboardEl.appendChild(div);
+  });
 }
 
 function formatHighScores() {
-  let text = "TOP 5 HIGH SCORES\n\n";
-  highScores.forEach((entry, i) => {
-    text += `${i + 1}. Score: ${entry.score} - Level: ${entry.level}\n`;
+  let text = "╔════════════════════════╗\n";
+  text += "║   ⭐ HONOR ROLL ⭐    ║\n";
+  text += "╚════════════════════════╝\n\n";
+  highScores.slice(0, 5).forEach((entry, i) => {
+    if (entry.score > 0) {
+      const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
+      text += `${medal} #${i + 1} ${entry.name.padEnd(12)} ${entry.score}\n`;
+    } else {
+      text += `    #${i + 1} ---\n`;
+    }
   });
   return text;
 }
 
 function triggerGameOver() {
+  if (state === "gameover") {
+    return;
+  }
   state = "gameover";
-  addHighScore(score, level);
+  setHUDHidden(true);
+  addHighScore(score, level, playerName);
+  updateLeaderboard();
   updateHUD();
   const hsText = formatHighScores();
-  showMessage(`Game Over! Score: ${score} Level: ${level}\n\n${hsText}\nPress ENTER to restart`);
+  showMessage(`⚔ BATTLE ENDED ⚔\n\nWARRIOR RANK: ${currentRank}\nFINAL HONOR: ${score}\nSTAGE: ${level}\n\n${hsText}\nPress ENTER to fight again`);
 }
 
 function resetGame() {
+  setHUDHidden(false);
   score = 0;
   lives = 3;
   level = 1;
@@ -90,10 +138,12 @@ function resetGame() {
   particles = [];
   screenShake = 0;
   animationFrame = 0;
+  enemyFireTimer = 60;
   createInvaders();
   createBunkers();
   updateHUD();
-  showMessage("Press ENTER to start");
+  updateLeaderboard();
+  showMessage("Press ENTER to begin battle");
   state = "ready";
 }
 
@@ -167,7 +217,7 @@ function createInvaders() {
   }
 }
 
-function createExplosion(x, y, color = "#ffff00", count = 8) {
+function createExplosion(x, y, color = "#d4af37", count = 8) {
   for (let i = 0; i < count; i += 1) {
     const angle = (Math.PI * 2 * i) / count;
     particles.push({
@@ -183,16 +233,22 @@ function createExplosion(x, y, color = "#ffff00", count = 8) {
 }
 
 function updateHUD() {
-  scoreEl.textContent = `Score: ${score}`;
-  livesEl.textContent = `Lives: ${lives}`;
-  levelEl.textContent = `Level: ${level}`;
+  scoreEl.textContent = `HONOR: ${score}`;
+  livesEl.textContent = `LIVES: ${lives}`;
+  levelEl.textContent = `STAGE: ${level}`;
+  playerNameDisplay.textContent = `戦士: ${playerName.toUpperCase()}`;
+  rankEl.textContent = `RANK: ${currentRank}`;
   if (boss && boss.alive) {
-    bossHealthEl.textContent = `Boss: ${boss.health}`;
+    bossHealthEl.textContent = `BOSS ALERT: ${boss.health}/${boss.maxHealth}`;
     bossHealthEl.classList.remove("hidden");
   } else {
     bossHealthEl.textContent = "";
     bossHealthEl.classList.add("hidden");
   }
+}
+
+function setHUDHidden(hidden) {
+  hudEl.classList.toggle("hidden", hidden);
 }
 
 function showMessage(text) {
@@ -202,6 +258,9 @@ function showMessage(text) {
 
 function hideMessage() {
   messageEl.classList.add("hidden");
+  if (state !== "gameover") {
+    setHUDHidden(false);
+  }
 }
 
 function fireBullet() {
@@ -343,11 +402,11 @@ function detectCollisions() {
     ) {
       boss.health -= 1;
       bullet.y = -100;
-      createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "#ff5555", 18);
+      createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "#c41e3a", 18);
       if (boss.health <= 0) {
         boss.alive = false;
         score += 200 + level * 10;
-        createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "#ff3333", 28);
+        createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "#8b0000", 28);
       }
       return;
     }
@@ -363,7 +422,7 @@ function detectCollisions() {
         invader.alive = false;
         bullet.y = -100;
         score += 10 + invader.row * 2;
-        createExplosion(invader.x + invader.width / 2, invader.y + invader.height / 2, "#ffaa00");
+        createExplosion(invader.x + invader.width / 2, invader.y + invader.height / 2, "#d4af37");
       }
     });
 
@@ -377,7 +436,7 @@ function detectCollisions() {
       ) {
         block.health -= 1;
         bullet.y = -100;
-        createExplosion(block.x + block.width / 2, block.y + block.height / 2, "#00ff88", 4);
+        createExplosion(block.x + block.width / 2, block.y + block.height / 2, "#8b7355", 4);
       }
     });
   });
@@ -392,7 +451,7 @@ function detectCollisions() {
       lives -= 1;
       bullet.y = gameHeight + 100;
       screenShake = 8;
-      createExplosion(player.x + player.width / 2, player.y + player.height / 2, "#ff3333", 12);
+      createExplosion(player.x + player.width / 2, player.y + player.height / 2, "#c41e3a", 12);
       if (lives <= 0) {
         triggerGameOver();
       }
@@ -408,7 +467,7 @@ function detectCollisions() {
       ) {
         block.health -= 1;
         bullet.y = gameHeight + 100;
-        createExplosion(block.x + block.width / 2, block.y + block.height / 2, "#00ff88", 4);
+        createExplosion(block.x + block.width / 2, block.y + block.height / 2, "#8b7355", 4);
       }
     });
   });
@@ -436,7 +495,7 @@ function detectCollisions() {
     level += 1;
     updateHUD();
     state = "levelup";
-    showMessage(`Level ${level} cleared! Press ENTER to continue`);
+    showMessage(`⚡ STAGE ${level} ⚡\nPress ENTER to continue`);
   }
 }
 
@@ -465,7 +524,7 @@ function updateGame(delta) {
 
   detectCollisions();
 
-  if (lives <= 0) {
+  if (lives <= 0 && state !== "gameover") {
     triggerGameOver();
   }
 
@@ -473,54 +532,83 @@ function updateGame(delta) {
 }
 
 function drawPlayer() {
-  ctx.fillStyle = "#7efaff";
+  ctx.fillStyle = "#d4af37";
   ctx.fillRect(player.x, player.y, player.width, player.height);
-  ctx.fillStyle = "#0ff";
+  ctx.fillStyle = "#e8b876";
   ctx.fillRect(player.x + 10, player.y - 6, 20, 6);
+  // Glow effect
+  ctx.shadowColor = "rgba(212, 175, 55, 0.6)";
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = "#e8b876";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(player.x - 2, player.y - 2, player.width + 4, player.height + 4);
+  ctx.shadowColor = "transparent";
 }
 
 function drawBullets() {
-  ctx.fillStyle = "#fff";
+  ctx.fillStyle = "#e8b876";
+  ctx.shadowColor = "rgba(232, 184, 118, 0.6)";
+  ctx.shadowBlur = 8;
   bullets.forEach((bullet) => {
     ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
   });
+  ctx.shadowColor = "transparent";
 }
 
 function drawEnemyBullets() {
-  ctx.fillStyle = "#ff6b6b";
+  ctx.fillStyle = "#c41e3a";
+  ctx.shadowColor = "rgba(196, 30, 58, 0.5)";
+  ctx.shadowBlur = 8;
   enemyBullets.forEach((bullet) => {
     ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
   });
+  ctx.shadowColor = "transparent";
 }
 
 function drawBunkers() {
   bunkers.forEach((block) => {
-    ctx.fillStyle = block.health === 2 ? "#66ff88" : "#75ffad";
+    ctx.fillStyle = block.health === 2 ? "#8b7355" : "#a0826d";
+    ctx.shadowColor = "rgba(139, 115, 85, 0.3)";
+    ctx.shadowBlur = 5;
     ctx.fillRect(block.x, block.y, block.width, block.height);
   });
+  ctx.shadowColor = "transparent";
 }
 
 function drawInvaders() {
   invaders.forEach((invader) => {
     if (!invader.alive) return;
     const animPhase = Math.floor((animationFrame + invader.animOffset) / 8) % 2;
-    const color = invader.row % 2 === 0 ? "#ffb347" : "#8ae3ff";
+    const color = invader.row % 2 === 0 ? "#c41e3a" : "#8b4513";
     ctx.fillStyle = color;
     const offsetX = animPhase === 0 ? 0 : 2;
+    ctx.shadowColor = invader.row % 2 === 0 ? "rgba(196, 30, 58, 0.3)" : "rgba(139, 69, 19, 0.3)";
+    ctx.shadowBlur = 8;
     ctx.fillRect(invader.x + offsetX, invader.y, invader.width - (animPhase === 0 ? 0 : 4), invader.height);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
+    ctx.fillStyle = "rgba(232, 184, 118, 0.2)";
     ctx.fillRect(invader.x + 8 + offsetX, invader.y + 6, invader.width - 20, 6);
   });
+  ctx.shadowColor = "transparent";
 }
 
 function drawBoss() {
   if (!boss || !boss.alive) return;
-  ctx.fillStyle = "#ff4f4f";
+  ctx.fillStyle = "#c41e3a";
+  ctx.shadowColor = "rgba(196, 30, 58, 0.5)";
+  ctx.shadowBlur = 15;
   ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
-  ctx.fillStyle = "#ffeb80";
+  
+  ctx.fillStyle = "#d4af37";
+  ctx.shadowColor = "rgba(212, 175, 55, 0.4)";
+  ctx.shadowBlur = 8;
   ctx.fillRect(boss.x + 12, boss.y + 12, boss.width - 24, 8);
-  ctx.fillStyle = "#fff";
+  
+  ctx.fillStyle = "#e8b876";
+  ctx.shadowColor = "rgba(232, 184, 118, 0.4)";
+  ctx.shadowBlur = 10;
   ctx.fillRect(boss.x + 12, boss.y + boss.height - 14, (boss.width - 24) * (boss.health / boss.maxHealth), 8);
+  
+  ctx.shadowColor = "transparent";
 }
 
 function drawParticles() {
@@ -528,13 +616,16 @@ function drawParticles() {
     const alpha = p.life / p.maxLife;
     ctx.globalAlpha = alpha * 0.8;
     ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 5;
     ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
     ctx.globalAlpha = 1;
   });
+  ctx.shadowColor = "transparent";
 }
 
 function drawGrid() {
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.strokeStyle = "rgba(212, 175, 55, 0.04)";
   ctx.lineWidth = 1;
   for (let x = 0; x <= gameWidth; x += 80) {
     ctx.beginPath();
@@ -579,8 +670,19 @@ function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);
 }
 
+// Event Listeners
 window.addEventListener("keydown", (event) => {
   if (event.code === "Enter") {
+    if (state === "name") {
+      if (playerNameInput.value.trim()) {
+        playerName = playerNameInput.value.trim();
+        nameScreenEl.classList.remove("active");
+        updateHUD();
+        resetGame();
+      }
+      return;
+    }
+
     if (state === "ready" || state === "levelup") {
       const wasLevelUp = state === "levelup";
       hideMessage();
@@ -598,9 +700,10 @@ window.addEventListener("keydown", (event) => {
     }
 
     if (state === "gameover") {
-      resetGame();
-      hideMessage();
-      state = "playing";
+      nameScreenEl.classList.add("active");
+      playerNameInput.value = "";
+      state = "name";
+      playerNameInput.focus();
       return;
     }
   }
@@ -626,8 +729,25 @@ window.addEventListener("blur", () => {
   });
 });
 
+// Start Button Handler
+startBtn.addEventListener("click", () => {
+  if (playerNameInput.value.trim()) {
+    playerName = playerNameInput.value.trim();
+    nameScreenEl.classList.remove("active");
+    updateHUD();
+    resetGame();
+  }
+});
+
+// Focus input on load
+playerNameInput.addEventListener("keypress", (event) => {
+  if (event.code === "Enter" && playerNameInput.value.trim()) {
+    startBtn.click();
+  }
+});
+
 loadHighScores();
-resetGame();
+updateLeaderboard();
 requestAnimationFrame((timestamp) => {
   lastTime = timestamp;
   render();
