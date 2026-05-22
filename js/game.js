@@ -8,6 +8,7 @@ const messageEl = document.getElementById("message");
 const hudEl = document.querySelector(".hud");
 const playerNameDisplay = document.getElementById("playerNameDisplay");
 const rankEl = document.getElementById("rank");
+const powerupEl = document.getElementById("powerup");
 const leaderboardEl = document.getElementById("leaderboard");
 const nameScreenEl = document.getElementById("nameScreen");
 const playerNameInput = document.getElementById("playerName");
@@ -29,13 +30,16 @@ let bullets = [];
 let enemyBullets = [];
 let bunkers = [];
 let particles = [];
+let powerUps = [];
 let enemyFireTimer = 0;
 let screenShake = 0;
 let animationFrame = 0;
+let shootCooldown = 0;
 let lastTime = 0;
 let highScores = [];
 let playerName = "";
 let currentRank = "--";
+let activePowerUps = { rapidFire: 0 };
 
 const player = {
   width: 40,
@@ -238,6 +242,12 @@ function updateHUD() {
   levelEl.textContent = `STAGE: ${level}`;
   playerNameDisplay.textContent = `戦士: ${playerName.toUpperCase()}`;
   rankEl.textContent = `RANK: ${currentRank}`;
+  if (activePowerUps.rapidFire > 0) {
+    const seconds = Math.ceil(activePowerUps.rapidFire / 60);
+    powerupEl.textContent = `POWER-UP: RAPID FIRE ${seconds}s`;
+  } else {
+    powerupEl.textContent = `POWER-UP: none`;
+  }
   if (boss && boss.alive) {
     bossHealthEl.textContent = `BOSS ALERT: ${boss.health}/${boss.maxHealth}`;
     bossHealthEl.classList.remove("hidden");
@@ -264,12 +274,18 @@ function hideMessage() {
 }
 
 function fireBullet() {
+  if (shootCooldown > 0) {
+    return;
+  }
+
   bullets.push({
     x: player.x + player.width / 2 - 3,
     y: player.y - 10,
     width: 6,
     height: 14,
   });
+
+  shootCooldown = activePowerUps.rapidFire > 0 ? 8 : 18;
 }
 
 function handleInput() {
@@ -407,6 +423,7 @@ function detectCollisions() {
         boss.alive = false;
         score += 200 + level * 10;
         createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2, "#8b0000", 28);
+        maybeSpawnPowerUp(boss.x + boss.width / 2, boss.y + boss.height / 2, true);
       }
       return;
     }
@@ -423,6 +440,7 @@ function detectCollisions() {
         bullet.y = -100;
         score += 10 + invader.row * 2;
         createExplosion(invader.x + invader.width / 2, invader.y + invader.height / 2, "#d4af37");
+        maybeSpawnPowerUp(invader.x + invader.width / 2, invader.y + invader.height / 2);
       }
     });
 
@@ -499,12 +517,62 @@ function detectCollisions() {
   }
 }
 
+function maybeSpawnPowerUp(x, y, guaranteed = false) {
+  const dropChance = guaranteed ? 1 : 0.18;
+  if (Math.random() > dropChance) {
+    return;
+  }
+
+  const type = Math.random() < 0.5 ? "health" : "rapidFire";
+  powerUps.push({
+    x: x - 12,
+    y: y - 12,
+    width: 24,
+    height: 24,
+    vy: 2,
+    type,
+  });
+}
+
+function updatePowerUps() {
+  powerUps.forEach((powerUp) => {
+    powerUp.y += powerUp.vy;
+  });
+
+  powerUps = powerUps.filter((powerUp) => powerUp.y < gameHeight + powerUp.height);
+
+  powerUps.forEach((powerUp) => {
+    if (
+      powerUp.x < player.x + player.width &&
+      powerUp.x + powerUp.width > player.x &&
+      powerUp.y < player.y + player.height &&
+      powerUp.y + powerUp.height > player.y
+    ) {
+      if (powerUp.type === "health") {
+        lives = Math.min(lives + 1, 6);
+        powerupEl.textContent = "POWER-UP: +1 LIFE";
+      } else if (powerUp.type === "rapidFire") {
+        activePowerUps.rapidFire = 360;
+        powerupEl.textContent = "POWER-UP: RAPID FIRE 6s";
+      }
+      powerUps = powerUps.filter((p) => p !== powerUp);
+    }
+  });
+
+  if (activePowerUps.rapidFire > 0) {
+    activePowerUps.rapidFire -= 1;
+  }
+}
+
 function updateGame(delta) {
   if (state !== "playing") {
     return;
   }
 
   animationFrame += 1;
+  if (shootCooldown > 0) {
+    shootCooldown -= 1;
+  }
   if (screenShake > 0) {
     screenShake -= 1;
   }
@@ -513,6 +581,7 @@ function updateGame(delta) {
   updateBullets();
   updateEnemyBullets();
   updateInvaders(delta);
+  updatePowerUps();
   
   particles = particles.filter((p) => {
     p.x += p.vx;
@@ -624,6 +693,24 @@ function drawParticles() {
   ctx.shadowColor = "transparent";
 }
 
+function drawPowerUps() {
+  powerUps.forEach((powerUp) => {
+    if (powerUp.type === "health") {
+      ctx.fillStyle = "#e8b876";
+      ctx.fillRect(powerUp.x - 12, powerUp.y - 12, powerUp.width, powerUp.height);
+      ctx.fillStyle = "#c41e3a";
+      ctx.fillRect(powerUp.x - 4, powerUp.y - 6, 8, 12);
+      ctx.fillRect(powerUp.x - 6, powerUp.y - 4, 12, 8);
+    } else if (powerUp.type === "rapidFire") {
+      ctx.fillStyle = "#8b7355";
+      ctx.fillRect(powerUp.x - 12, powerUp.y - 12, powerUp.width, powerUp.height);
+      ctx.fillStyle = "#d4af37";
+      ctx.fillRect(powerUp.x - 8, powerUp.y - 6, 16, 4);
+      ctx.fillRect(powerUp.x - 2, powerUp.y - 10, 4, 20);
+    }
+  });
+}
+
 function drawGrid() {
   ctx.strokeStyle = "rgba(212, 175, 55, 0.04)";
   ctx.lineWidth = 1;
@@ -657,6 +744,7 @@ function render() {
   drawEnemyBullets();
   drawInvaders();
   drawBoss();
+  drawPowerUps();
   drawParticles();
   
   ctx.restore();
