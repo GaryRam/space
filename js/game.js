@@ -672,7 +672,12 @@ function gameLoop(timestamp) {
 
 // Event Listeners
 window.addEventListener("keydown", (event) => {
-  if (event.code === "Enter") {
+  const isEnter = event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter" || event.keyCode === 13;
+  const isSpace = event.key === " " || event.code === "Space" || event.keyCode === 32;
+
+  if (isEnter) {
+    console.log('[game] Enter pressed — state=', state);
+    // If we're on the name screen, accept the name and go to ready
     if (state === "name") {
       if (playerNameInput.value.trim()) {
         playerName = playerNameInput.value.trim();
@@ -680,9 +685,11 @@ window.addEventListener("keydown", (event) => {
         updateHUD();
         resetGame();
       }
+      event.preventDefault();
       return;
     }
 
+    // If ready or after level up, start playing
     if (state === "ready" || state === "levelup") {
       const wasLevelUp = state === "levelup";
       hideMessage();
@@ -696,24 +703,27 @@ window.addEventListener("keydown", (event) => {
         createInvaders();
       }
       createBunkers();
+      event.preventDefault();
       return;
     }
 
+    // If game over, bring back name entry
     if (state === "gameover") {
       nameScreenEl.classList.add("active");
       playerNameInput.value = "";
       state = "name";
       playerNameInput.focus();
+      event.preventDefault();
       return;
     }
   }
 
-  if (event.code === "Space") {
+  if (isSpace) {
     event.preventDefault();
     keys.Space = true;
   }
 
-  keys[event.code] = true;
+  keys[event.code || event.key] = true;
 });
 
 window.addEventListener("keyup", (event) => {
@@ -740,9 +750,11 @@ startBtn.addEventListener("click", () => {
 });
 
 // Focus input on load
-playerNameInput.addEventListener("keypress", (event) => {
-  if (event.code === "Enter" && playerNameInput.value.trim()) {
+playerNameInput.addEventListener("keydown", (event) => {
+  const isEnter = event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter" || event.keyCode === 13;
+  if (isEnter && playerNameInput.value.trim()) {
     startBtn.click();
+    event.preventDefault();
   }
 });
 
